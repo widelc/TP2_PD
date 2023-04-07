@@ -6,6 +6,7 @@ import warnings
 import pandas as pd
 
 from scipy.optimize import minimize
+from scipy.interpolate import interp1d
 from pprint import pprint
 from math import pi
 
@@ -33,7 +34,6 @@ def load_price():
     return p.sort_values(by=['date'])[['date', 'close']]
 
 def get_dividend_rate(time_t):
-    from scipy.interpolate import interp1d
     y = load_dividend()
 
     date_ref = min([min(y.date),min(time_t)])
@@ -44,7 +44,6 @@ def get_dividend_rate(time_t):
     return interp((time_t - date_ref).apply(lambda x : x.days))
 
 def get_price(time_t):
-    from scipy.interpolate import interp1d
     p = load_price()
 
     date_ref = min([min(p.date),min(time_t)])
@@ -55,7 +54,6 @@ def get_price(time_t):
     return interp((time_t - date_ref).apply(lambda x : x.days))
 
 def get_risk_free_rate(time_t, dtm):
-    from scipy.interpolate import interp1d
     rf = load_zero_curve()
     rf = rf[rf.date == time_t]
 
@@ -147,12 +145,12 @@ class ngarch(model):
     def P_predict_h(self):
         theta     = [self.lmbda, self.omega, self.alpha, self.beta, self.gamma]
         h_t, eps  = f_ht_NGARCH(theta, self.log_xret) 
-        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma - self.lmbda) ** 2) + self.beta * h_t[-1]
+        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma) ** 2) + self.beta * h_t[-1]
     
     def Q_predict_h(self):
         theta     = [self.lmbda, self.omega, self.alpha, self.beta, self.gamma]
         h_t, eps  = f_ht_NGARCH(theta, self.log_xret)
-        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma) ** 2) + self.beta * h_t[-1]
+        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma - self.lmbda) ** 2) + self.beta * h_t[-1]
     
     def simulateP(self, S_t0, n_days, n_paths, h_tp1, z=None):
         '''Simulate excess returns and their variance under the P measure
@@ -361,18 +359,70 @@ def f_describe_table(option_info):
     option_info = f_add_DTM(option_info)
 
     # Reorganize data and show descriptive table
+    warnings.simplefilter('ignore')
     table = option_info.groupby(['date','cp_flag'])[['strike_price','impl_volatility','delta','DTM']].describe()
     table['strike_price']    = table['strike_price'][['count','min','max']]
     table['impl_volatility'] = table['impl_volatility'][['min','max']]
     table['delta'] = table['delta'][['min','max']]
     table['DTM']   = table['DTM'][['min','max']]
+    warnings.resetwarnings()
 
     return table
 
 def f_clean_table(option_info):
 
-    keep_col    = ['date', 'exdate', 'cp_flag', 'strike_price', 'impl_volatility','delta','gamma','vega','theta','DTM']
+    keep_col    = ['date','exdate','cp_flag', 'strike_price','mean_bidask','impl_volatility','delta','gamma','vega','theta','DTM']
     option_info['date']   =   pd.to_datetime(option_info['date'])
     option_info['exdate'] = pd.to_datetime(option_info['exdate'])
+    option_info['mean_bidask'] = (option_info['best_bid'] + option_info['best_offer']) / 2
+    option_info = option_info.drop_duplicates(subset=['date', 'exdate', 'cp_flag', 'strike_price'])
 
     return option_info[keep_col]
+
+def f_add_Q3_info(option_info, days_in_year):
+
+    # Ajouter les prix et les dividende à option_info
+    option_info['S_t'] = get_price(option_info.date)
+    option_info['y_t'] = get_dividend_rate(option_info.date)
+
+    # Ajouter les taux sans risque à option_info
+    date_unique = np.unique(option_info.date)
+    rf = [get_risk_free_rate(date, option_info[option_info.date == date].DTM) for date in date_unique]
+    option_info['r_f'] = np.concatenate(([arr for arr in rf]))
+
+    # Ajouer le moneyness K/F à option_info
+    K = option_info.strike_price / 1000
+    F = option_info.S_t * np.exp((option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year)
+    option_info['K/F'] = K / F
+
+    return option_info
+
+def f_F_CBOE(option_info):
+
+    option_info['F_CBOE'] = pd.NA
+    DTM_unique  = np.unique(option_info.DTM)
+    date_unique = np.unique(option_info.date)
+
+    for dtm in DTM_unique :
+
+        for date in date_unique:
+            
+            #date = np.datetime64(date)
+            option_DTM_i  = option_info[option_info.DTM == dtm]
+            option_DTM_ti = option_DTM_i[option_DTM_i.date == date].sort_values(['cp_flag', 'K/F'])
+
+            if not option_DTM_ti.empty:
+
+                call_OTM   = option_DTM_ti[option_DTM_ti.cp_flag == 'C'].loc[option_DTM_ti['K/F'] > 1]
+                put_OTM    = option_DTM_ti[option_DTM_ti.cp_flag == 'P'].loc[option_DTM_ti['K/F'] < 1]
+                option_OTM = pd.concat([put_OTM , call_OTM])
+
+                interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM.mean_bidask, kind='linear')
+                mean_bidask_ATM    = interp_mean_bidask(1)
+
+                interp_forward = interp1d(option_OTM.mean_bidask, option_OTM.strike_price, kind='linear')
+                forward        = interp_forward(mean_bidask_ATM) / 1000
+
+                option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
+    
+    return option_info
