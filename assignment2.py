@@ -36,7 +36,7 @@ def load_price():
 def get_dividend_rate(time_t):
     y = load_dividend()
 
-    date_ref = min([min(y.date),min(time_t)])
+    date_ref = min([min(y.date), min(time_t)])
     interp   = interp1d((y.date - date_ref).apply(lambda x : x.days), 
                        y.rate/100, 
                        kind='linear')
@@ -46,6 +46,7 @@ def get_dividend_rate(time_t):
 def get_price(time_t):
     p = load_price()
     date_ref = min([min(p.date),min(time_t)])
+    
     interp   = interp1d((p.date - date_ref).apply(lambda x : x.days), 
                        p.close, 
                        kind='linear')
