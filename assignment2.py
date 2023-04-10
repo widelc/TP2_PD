@@ -250,25 +250,33 @@ def plot_excess_return_forecasts(horizon, P, Q, annualized=False):
     
 def plot_var_forecasts(horizon, P, Q, annualized=False):
 
-    P.expected_h = np.mean(P.h,axis=1)
-    Q.expected_h = np.mean(Q.h,axis=1)
+    title = ['1996-12-31', '2020-02-01']
+    fig,axes = plt.subplots(len(P),1, figsize=(14,10))
+    for i in range(len(P)):
 
-    y_prefix = ''
-    if annualized:
-        days_in_year = 1 / horizon[0]
-        P.expected_h = P.expected_h * days_in_year
-        Q.expected_h = Q.expected_h * days_in_year
-        y_prefix     = 'Annualized '
+        p = P[i]
+        q = Q[i]
 
-    fig, ax = plt.subplots()
-    ax.plot(horizon, P.expected_h, label='P Var forecasts (sim)')
-    ax.plot(horizon, Q.expected_h, label='Q Var forecasts (sim)')
-    ax.legend(loc='upper right')   
+        p.expected_h = np.mean(p.h,axis=1)
+        q.expected_h = np.mean(q.h,axis=1)
+
+
+        if annualized:
+            days_in_year = 1 / horizon[0]
+            p.expected_h = p.expected_h * days_in_year
+            q.expected_h = q.expected_h * days_in_year
+            y_prefix     = 'Annualized '
+
+        ax = plt.subplot(2,1, i+1)
+        ax.plot(horizon, p.expected_h, label='P Var forecasts (sim)')
+        ax.plot(horizon, q.expected_h, label='Q Var forecasts (sim)')
+        ax.legend(loc='upper right')   
+        ax.set_ylabel(y_prefix + 'Variance')
+        ax.set_title(title[i])
+
     ax.set_xlabel('Years to Maturity')
-    ax.set_ylabel(y_prefix + 'Variance')
-    ax.set_title('Simulated Conditionnal Variance Forecast')
     
-    return ax
+    return axes
 
 
 def f_ht_NGARCH(theta, log_xreturns):
@@ -384,6 +392,7 @@ def f_clean_table(option_info):
     option_info['date']   =   pd.to_datetime(option_info['date'])
     option_info['exdate'] = pd.to_datetime(option_info['exdate'])
     option_info['mean_bidask'] = (option_info['best_bid'] + option_info['best_offer']) / 2
+
     option_info = option_info.drop_duplicates(subset=['date', 'exdate', 'cp_flag', 'strike_price'])
 
     return option_info[keep_col]
@@ -402,7 +411,18 @@ def f_add_Q3_info(option_info, days_in_year):
     # Ajouer le moneyness K/F à option_info
     K = option_info.strike_price / 1000
     F = option_info.S_t * np.exp((option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year)
+    option_info['F'] = F
     option_info['K/F'] = K / F
+
+    # TEST (si on a besoin, enlever mean_bidask)
+    option_info['impl. price'] = bms.option_price(S = option_info.S_t, 
+                                                  K = K, 
+                                                  r = option_info.r_f, 
+                                                  y = option_info.y_t, 
+                                                  T  = option_info.DTM / days_in_year, 
+                                                  sigma =  option_info.impl_volatility, 
+                                                  is_call = (option_info.cp_flag == 'C'))
+
 
     return option_info
 
@@ -429,7 +449,11 @@ def f_F_CBOE(option_info):
                 interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM.mean_bidask, kind='linear')
                 mean_bidask_ATM    = interp_mean_bidask(1)
 
-                interp_forward = interp1d(option_OTM.mean_bidask, option_OTM.strike_price, kind='linear')
+                # TEST
+                interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM['impl. price'], kind='linear')
+                mean_bidask_ATM    = interp_mean_bidask(1)
+
+                interp_forward = interp1d(option_OTM['impl. price'], option_OTM.strike_price, kind='linear')
                 forward        = interp_forward(mean_bidask_ATM) / 1000
 
                 option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
