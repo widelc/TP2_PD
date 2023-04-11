@@ -700,6 +700,4 @@ def calculate_option_prices(option_info, ng1996, ng2020):
                        option_info_20.iterrows()]
     option_info.loc[option_info_20.index, 'Option_price'] = option_price_20
 
-    return option_info[
-        ['date', 'exdate', 'cp_flag', 'strike_price', 'mean_bidask',
-         'impl_volatility', 'Option_price']]
+    return option_info
