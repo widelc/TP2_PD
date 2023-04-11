@@ -40,6 +40,33 @@ def load_price():
     return p.sort_values(by=["date"])[["date", "close"]]
 
 
+def read_and_concatenate_options(file1: str, file2: str) -> pd.DataFrame:
+    """
+    Lit et concatène deux fichiers CSV d'options dans un seul DataFrame.
+
+    Parameters
+    ----------
+    file1 : str
+        Le chemin du premier fichier CSV d'options.
+    file2 : str
+        Le chemin du deuxième fichier CSV d'options.
+
+    Returns
+    -------
+    pd.DataFrame
+        Un DataFrame contenant les données des deux fichiers CSV d'options concaténés.
+    """
+
+    # Lit les fichiers CSV d'options
+    options1 = pd.read_csv(file1, index_col=0).reset_index(drop=True)
+    options2 = pd.read_csv(file2, index_col=0).reset_index(drop=True)
+
+    # Concatène les deux DataFrames d'options
+    option_info = pd.concat([options1, options2])
+
+    return option_info
+
+
 def get_dividend_rate(time_t):
     y = load_dividend()
 
@@ -494,8 +521,8 @@ def f_clean_table(option_info):
         "vega",
         "theta",
         "DTM",
-        "K/S",
     ]
+
     option_info["date"] = pd.to_datetime(option_info["date"])
     option_info["exdate"] = pd.to_datetime(option_info["exdate"])
     option_info["mean_bidask"] = (
@@ -505,12 +532,20 @@ def f_clean_table(option_info):
         subset=["date", "exdate", "cp_flag", "strike_price"]
     )
 
+    # Vérifie si la colonne DTM est présente dans le DataFrame
+    if "DTM" not in option_info.columns:
+        # Ajoute la colonne DTM en utilisant la fonction f_add_DTM
+        option_info = f_add_DTM(option_info)
+        option_info.dropna(subset=["impl_volatility"], how="any", inplace=True)
+        option_info = option_info[option_info['DTM'] > 7]
+        option_info = option_info[option_info['DTM'] < 550]
+
     return option_info[keep_col]
 
 
 def f_add_Q3_info(option_info, days_in_year):
 
-    # Ajouter les prix et les dividende à option_info
+    # Ajouter les prix et les dividendes à option_info
     option_info["S_t"] = get_price(option_info.date)
     option_info["y_t"] = get_dividend_rate(option_info.date)
 
