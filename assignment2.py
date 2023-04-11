@@ -461,6 +461,7 @@ def f_out_format_Q1(ng_vec):
 
 
 def f_add_DTM(option_info):
+    option_info = option_info.copy()
     option_info["DTM"] = np.array(option_info["exdate"], dtype="datetime64") - np.array(
         option_info["date"], dtype="datetime64"
     )
@@ -468,23 +469,22 @@ def f_add_DTM(option_info):
     return option_info
 
 
-def f_add_moneyness(options_info, spx):
-    options_info["K/S"] = np.zeros(len(options_info.index))
+def f_add_moneyness(option_info, spx):
+    option_info["K/S"] = np.zeros(len(option_info.index))
 
-    date = options_info["date"].unique()
+    date = option_info["date"].unique()
 
     prices = [spx[spx["date"] == d]["close"] for d in date]
-    options_info.loc[:, ["strike_price"]] = options_info["strike_price"].div(1000)
+    option_info.loc[:, ["strike_price"]] = option_info["strike_price"].div(1000)
     for i in range(len(prices)):
-        options_info.loc[options_info["date"] == date[i], "K/S"] = \
-        options_info[options_info["date"] == date[i]]["strike_price"].div(
+        option_info.loc[option_info["date"] == date[i], "K/S"] = \
+        option_info[option_info["date"] == date[i]]["strike_price"].div(
             float(prices[i]))
 
-    return options_info
+    return option_info
 
 
 def f_describe_table(option_info, spx):
-
     # Drop rows with missing IV
     option_info.dropna(subset=["impl_volatility"], how="any", inplace=True)
 
@@ -507,7 +507,12 @@ def f_describe_table(option_info, spx):
     return table
 
 
-def f_clean_table(option_info):
+def f_clean_table(option_info, spx, keep_moneyness=False):
+
+    option_info.dropna(subset=["impl_volatility"], how="any", inplace=True)
+    option_info = f_add_DTM(option_info)
+    option_info = option_info[option_info['DTM'] > 7]
+    option_info = option_info[option_info['DTM'] < 550]
 
     keep_col = [
         "date",
@@ -523,6 +528,10 @@ def f_clean_table(option_info):
         "DTM",
     ]
 
+    if keep_moneyness:
+        option_info = f_add_moneyness(option_info, spx)
+        keep_col.append("K/S")
+
     option_info["date"] = pd.to_datetime(option_info["date"])
     option_info["exdate"] = pd.to_datetime(option_info["exdate"])
     option_info["mean_bidask"] = (
@@ -532,37 +541,24 @@ def f_clean_table(option_info):
         subset=["date", "exdate", "cp_flag", "strike_price"]
     )
 
-    # Vérifie si la colonne DTM est présente dans le DataFrame
-    if "DTM" not in option_info.columns:
-        # Ajoute la colonne DTM en utilisant la fonction f_add_DTM
-        option_info = f_add_DTM(option_info)
-        option_info.dropna(subset=["impl_volatility"], how="any", inplace=True)
-        option_info = option_info[option_info['DTM'] > 7]
-        option_info = option_info[option_info['DTM'] < 550]
-
     return option_info[keep_col]
 
 
 def f_add_Q3_info(option_info, days_in_year):
-
     # Ajouter les prix et les dividendes à option_info
-    option_info["S_t"] = get_price(option_info.date)
-    option_info["y_t"] = get_dividend_rate(option_info.date)
+    option_info['S_t'] = get_price(option_info.date)
+    option_info['y_t'] = get_dividend_rate(option_info.date)
 
     # Ajouter les taux sans risque à option_info
     date_unique = np.unique(option_info.date)
-    rf = [
-        get_risk_free_rate(date, option_info[option_info.date == date].DTM)
-        for date in date_unique
-    ]
-    option_info["r_f"] = np.concatenate(([arr for arr in rf]))
+    rf = [get_risk_free_rate(date, option_info[option_info.date == date].DTM) for date in date_unique]
+    option_info['r_f'] = np.concatenate(([arr for arr in rf]))
 
     # Ajouer le moneyness K/F à option_info
     K = option_info.strike_price / 1000
-    F = option_info.S_t * np.exp(
-        (option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year
-    )
-    option_info["K/F"] = K / F
+    F = option_info.S_t * np.exp((option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year)
+    option_info['F'] = F
+    option_info['K/F'] = K / F
 
     return option_info
 
@@ -592,42 +588,55 @@ def f_F_CBOE(option_info: pd.DataFrame) -> pd.DataFrame:
 
     # Parcourt toutes les combinaisons de DTM et de date uniques
     for dtm in DTM_unique:
+
         for date in date_unique:
-            # Sélectionne les options avec le DTM et la date donnés, triées par cp_flag et K/F
+
+            # date = np.datetime64(date)
             option_DTM_i = option_info[option_info.DTM == dtm]
             option_DTM_ti = option_DTM_i[
-                option_DTM_i.date == date].sort_values(
-                ["cp_flag", "K/F"]
-            )
+                option_DTM_i.date == date].sort_values(['cp_flag', 'K/F'])
 
             if not option_DTM_ti.empty:
-                # Sélectionne les options call OTM et put OTM
-                call_OTM = option_DTM_ti[option_DTM_ti.cp_flag == "C"].loc[
-                    option_DTM_ti["K/F"] > 1
-                    ]
-                put_OTM = option_DTM_ti[option_DTM_ti.cp_flag == "P"].loc[
-                    option_DTM_ti["K/F"] < 1
-                    ]
-                # Concatène les options call et put OTM
+                call_OTM = option_DTM_ti[option_DTM_ti.cp_flag == 'C'].loc[
+                    option_DTM_ti['K/F'] > 1]
+                put_OTM = option_DTM_ti[option_DTM_ti.cp_flag == 'P'].loc[
+                    option_DTM_ti['K/F'] < 1]
                 option_OTM = pd.concat([put_OTM, call_OTM])
 
-                # Interpolation linéaire des prix d'exercice en fonction des prix moyens d'offre et de demande des options OTM
-                interp_mean_bidask = interp1d(
-                    option_OTM["K/F"], option_OTM.mean_bidask, kind="linear"
-                )
-                # Évalue la fonction interpolée au niveau de la monnaie (ATM)
-                mean_bidask_ATM = interp_mean_bidask(1)
+                forward_price = interp1d(option_OTM['K/F'], option_OTM["F"],
+                                         kind='linear')
+                forward = forward_price(1)
 
-                # Interpolation linéaire des prix d'exercice en fonction des prix moyens d'offre et de demande des options OTM
-                interp_forward = interp1d(
-                    option_OTM.mean_bidask, option_OTM.strike_price,
-                    kind="linear"
-                )
-                # Évalue la fonction interpolée au niveau de mean_bidask_ATM pour obtenir le prix forward implicite
-                forward = interp_forward(mean_bidask_ATM) / 1000
+                option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
 
-                # Met à jour la colonne "F_CBOE" avec le prix forward implicite estimé
-                option_info.loc[option_DTM_ti.index, "F_CBOE"] = forward
-
-    # Retourne le DataFrame mis à jour avec les prix forward implicites estimés
     return option_info
+
+
+def create_comparison_df(option_info):
+    """
+    Crée un DataFrame comparant les valeurs EX1 et EX2 pour une date donnée.
+
+    Parameters
+    ----------
+    option_info : pd.DataFrame
+        DataFrame contenant les informations sur les options, y compris les dates, DTM, exdiv_1 et exdiv_2.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame contenant les colonnes 'DTM_2020', 'EX1_2020', 'EX2_2020', 'DIFF' et 'DIFF_BOOL'.
+    """
+    date_unique = np.unique(option_info['date'])
+    dtm_unique = np.unique(option_info.loc[option_info.date == date_unique[1]].DTM)
+    ex1_unique = np.unique(option_info.loc[option_info.date == date_unique[1]].exdiv_1)
+    ex2_unique = np.unique(option_info.loc[option_info.date == date_unique[1]].exdiv_2)
+
+    comparison_df = pd.DataFrame({
+        'DTM_2020': dtm_unique,
+        'EX1_2020': ex1_unique,
+        'EX2_2020': ex2_unique,
+        'DIFF': ex1_unique - ex2_unique,
+        'DIFF_BOOL': (ex1_unique - ex2_unique) == 0
+    })
+
+    return comparison_df
