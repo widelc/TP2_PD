@@ -668,7 +668,7 @@ def simulate_returns(option_info, ng1996, ng2020, n_paths=100000):
                     ex_r = ex_r_20
 
                 R_j = np.exp(np.apply_along_axis(sum, 0, ex_r[:dtm]))
-                option_info.loc[option_DTM_ti.index, 'R_j'] = R_j
+                option_info.loc[option_DTM_ti.index, 'R_j'] = R_j[:len(option_DTM_ti.index)]
 
     warnings.resetwarnings()
     return option_info
