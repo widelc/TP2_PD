@@ -403,6 +403,7 @@ def f_add_Q3_info(option_info, days_in_year):
     # Ajouer le moneyness K/F à option_info
     K = option_info.strike_price / 1000
     F = option_info.S_t * np.exp((option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year)
+    option_info['F'] = F
     option_info['K/F'] = K / F
 
     return option_info
@@ -427,11 +428,10 @@ def f_F_CBOE(option_info):
                 put_OTM    = option_DTM_ti[option_DTM_ti.cp_flag == 'P'].loc[option_DTM_ti['K/F'] < 1]
                 option_OTM = pd.concat([put_OTM , call_OTM])
 
-                interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM.mean_bidask, kind='linear')
-                mean_bidask_ATM    = interp_mean_bidask(1)
+                forward_price = interp1d(option_OTM['K/F'], option_OTM["F"], kind='linear')
+                forward    = forward_price(1) 
 
-                interp_forward = interp1d(option_OTM.mean_bidask, option_OTM.strike_price, kind='linear')
-                forward        = interp_forward(mean_bidask_ATM) / 1000
+                
 
                 option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
     

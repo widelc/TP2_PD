@@ -193,7 +193,17 @@ class ngarch(model):
 
     
     def option_price(self, cum_ex_r, F_t0_T, K, rf, dtm, is_call):
-        raise RuntimeError('Implement for assignment 2')
+            
+        cp = [1 if cond else -1 for cond in [is_call]][0]
+
+        disc   = np.exp(-rf * dtm / self.days_in_year)
+
+        payoff = np.maximum(0,((F_t0_T * cum_ex_r) - K) * cp)
+        
+        option_price = np.mean(disc * payoff)
+
+        return option_price
+
 
     
 def plot_excess_return_forecasts(horizon, P, Q, annualized=False):
