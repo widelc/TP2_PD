@@ -640,3 +640,65 @@ def create_comparison_df(option_info):
     })
 
     return comparison_df
+
+
+def simulate_returns(option_info, ng1996, ng2020, n_paths=100000):
+    date_unique = np.unique(option_info.date)
+    DTM_unique = np.unique(option_info.DTM)
+
+    n_days96 = max(option_info[option_info.date == date_unique[0]].DTM)
+    n_days20 = max(option_info[option_info.date == date_unique[1]].DTM)
+
+    ex_r_96 = measure(
+        *ng1996.simulateQ(1, n_days96, n_paths, ng1996.Q_predict_h())).ex_r
+    ex_r_20 = measure(
+        *ng2020.simulateQ(1, n_days20, n_paths, ng2020.Q_predict_h())).ex_r
+
+    option_info['R_j'] = pd.NA
+    warnings.simplefilter('ignore')
+
+    for dtm in DTM_unique:
+        option_DTM_i = option_info[option_info.DTM == dtm]
+        for date in date_unique:
+            option_DTM_ti = option_DTM_i[option_DTM_i.date == date]
+            if not option_DTM_ti.empty:
+                if pd.DatetimeIndex([date]).year == 1996:
+                    ex_r = ex_r_96
+                else:
+                    ex_r = ex_r_20
+
+                R_j = np.exp(np.apply_along_axis(sum, 0, ex_r[:dtm]))
+                option_info.loc[option_DTM_ti.index, 'R_j'] = R_j
+
+    warnings.resetwarnings()
+    return option_info
+
+
+def calculate_option_prices(option_info, ng1996, ng2020):
+    date_unique = np.unique(option_info.date)
+
+    option_info['Option_price'] = pd.NA
+    option_info_96 = option_info[option_info.date == date_unique[0]]
+    option_info_20 = option_info[option_info.date == date_unique[1]]
+
+    option_price_96 = [ng1996.option_price(info.R_j,
+                                           info.F_CBOE,
+                                           info.strike_price / 1000,
+                                           info.r_f,
+                                           info.DTM,
+                                           info.cp_flag == 'C') for _, info in
+                       option_info_96.iterrows()]
+    option_info.loc[option_info_96.index, 'Option_price'] = option_price_96
+
+    option_price_20 = [ng2020.option_price(info.R_j,
+                                           info.F_CBOE,
+                                           info.strike_price / 1000,
+                                           info.r_f,
+                                           info.DTM,
+                                           info.cp_flag == 'C') for _, info in
+                       option_info_20.iterrows()]
+    option_info.loc[option_info_20.index, 'Option_price'] = option_price_20
+
+    return option_info[
+        ['date', 'exdate', 'cp_flag', 'strike_price', 'mean_bidask',
+         'impl_volatility', 'Option_price']]
