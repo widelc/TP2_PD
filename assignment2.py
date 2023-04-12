@@ -115,9 +115,9 @@ class ngarch(model):
         Dt = 1 / days_in_year
         
         ng.omega = ng.variance_targeting( log_xret.var() )
-        #print(ng)
-        #print('Persistence:', ng.persistence())
-        #print('Unconditional volatility:', np.sqrt(ng.uncond_var()/Dt))
+        # print(ng)
+        # print('Persistence:', ng.persistence())
+        # print('Unconditional volatility:', np.sqrt(ng.uncond_var()/Dt))
         
         ng.log_xret = log_xret
         return ng
@@ -325,6 +325,7 @@ def f_NGARCH(ng):
     # Optimization (and ignore warnings)
     warnings.simplefilter('ignore')
     bounds = [(None, None), (1e-8, None), (1e-8, None), (1e-8, None), (1e-8, None)]
+    
     opt    = minimize(fun    = f_nll_NGARCH, 
                       x0     = theta_0, 
                       args   = ng.log_xret,
@@ -377,10 +378,11 @@ def f_describe_table(option_info):
 
     # Reorganize data and show descriptive table
     warnings.simplefilter('ignore')
-    table = option_info.groupby(['date','cp_flag'])[['strike_price','impl_volatility','delta','DTM']].describe()
+    table = option_info.groupby(['date','cp_flag'])[['strike_price','impl_volatility','delta','gamma','DTM']].describe()
     table['strike_price']    = table['strike_price'][['count','min','max']]
     table['impl_volatility'] = table['impl_volatility'][['min','max']]
     table['delta'] = table['delta'][['min','max']]
+    table['gamma'] = table['gamma'][['min']]
     table['DTM']   = table['DTM'][['min','max']]
     warnings.resetwarnings()
 
@@ -388,8 +390,8 @@ def f_describe_table(option_info):
 
 def f_clean_table(option_info):
 
-    keep_col    = ['date','exdate','cp_flag', 'strike_price','mean_bidask','impl_volatility','delta','gamma','vega','theta','DTM']
-    option_info['date']   =   pd.to_datetime(option_info['date'])
+    keep_col    = ['date','exdate','cp_flag', 'strike_price','volume','best_bid', 'mean_bidask','impl_volatility','delta','gamma','vega','theta','DTM']
+    option_info['date']   = pd.to_datetime(option_info['date'])
     option_info['exdate'] = pd.to_datetime(option_info['exdate'])
     option_info['mean_bidask'] = (option_info['best_bid'] + option_info['best_offer']) / 2
 
@@ -408,53 +410,31 @@ def f_add_Q3_info(option_info, days_in_year):
     rf = [get_risk_free_rate(date, option_info[option_info.date == date].DTM) for date in date_unique]
     option_info['r_f'] = np.concatenate(([arr for arr in rf]))
 
-    # Ajouer le moneyness K/F à option_info
-    K = option_info.strike_price / 1000
-    F = option_info.S_t * np.exp((option_info.r_f - option_info.y_t) * option_info.DTM / days_in_year)
-    option_info['F'] = F
-    option_info['K/F'] = K / F
-
-    # TEST (si on a besoin, enlever mean_bidask)
-    option_info['impl. price'] = bms.option_price(S = option_info.S_t, 
-                                                  K = K, 
-                                                  r = option_info.r_f, 
-                                                  y = option_info.y_t, 
-                                                  T  = option_info.DTM / days_in_year, 
-                                                  sigma =  option_info.impl_volatility, 
-                                                  is_call = (option_info.cp_flag == 'C'))
-
-
     return option_info
 
-def f_F_CBOE(option_info):
+def f_F_CBOE(option_info, days_in_year):
 
     option_info['F_CBOE'] = pd.NA
     DTM_unique  = np.unique(option_info.DTM)
     date_unique = np.unique(option_info.date)
 
     for dtm in DTM_unique :
-
+        option_DTM_i  = option_info[option_info.DTM == dtm]
         for date in date_unique:
-            
-            #date = np.datetime64(date)
-            option_DTM_i  = option_info[option_info.DTM == dtm]
-            option_DTM_ti = option_DTM_i[option_DTM_i.date == date].sort_values(['cp_flag', 'K/F'])
 
+            # Garder les options pour la bonne date et avec lesquelles on a un put et un call pour un strike
+            option_DTM_ti = option_DTM_i[option_DTM_i.date == date].sort_values(['strike_price','cp_flag'])
+
+            df = option_DTM_ti[option_DTM_ti.best_bid != 0]
+            df = option_DTM_ti[option_DTM_ti.duplicated(subset = ['strike_price'], keep=False)]
+            
             if not option_DTM_ti.empty:
 
-                call_OTM   = option_DTM_ti[option_DTM_ti.cp_flag == 'C'].loc[option_DTM_ti['K/F'] > 1]
-                put_OTM    = option_DTM_ti[option_DTM_ti.cp_flag == 'P'].loc[option_DTM_ti['K/F'] < 1]
-                option_OTM = pd.concat([put_OTM , call_OTM])
+                diff = df.groupby('strike_price')['mean_bidask'].apply(lambda x: x[x.index[0]] - x[x.index[1]])
 
-                interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM.mean_bidask, kind='linear')
-                mean_bidask_ATM    = interp_mean_bidask(1)
-
-                # TEST
-                interp_mean_bidask = interp1d(option_OTM['K/F'], option_OTM['impl. price'], kind='linear')
-                mean_bidask_ATM    = interp_mean_bidask(1)
-
-                interp_forward = interp1d(option_OTM['impl. price'], option_OTM.strike_price, kind='linear')
-                forward        = interp_forward(mean_bidask_ATM) / 1000
+                K_diff_min = diff.abs().idxmin()
+                diff_min   = diff[K_diff_min]
+                forward    = (K_diff_min / 1000) + diff_min * np.exp(option_DTM_ti.r_f * dtm / days_in_year)
 
                 option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
     
