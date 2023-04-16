@@ -5,6 +5,7 @@ import pandas as pd
 import math
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
+import numpy as np
 
 
 if os.getcwd().startswith("/Users/christian/"):
@@ -643,6 +644,78 @@ def check_constraints_and_stationarity(df: pd.DataFrame, bounds: list) -> bool:
             return False
 
     return True
+
+
+
+def compute_model_Q1(log_xreturns: np.ndarray, days_in_year: int, f_ngarch, measure, f_out_format_Q1, plot_var_forecasts2, misspecified: bool = False) -> Tuple[pd.DataFrame, object]:
+    """
+    Computes the implications on the parameters and plots for a model, which can be specified (optimized) or misspecified (non-optimized).
+
+    Parameters
+    ----------
+    log_xreturns : np.ndarray
+        The log returns data.
+    days_in_year : int
+        The number of days in a year.
+    f_ngarch : function
+        The function to perform NGARCH estimation.
+    Measure : class
+        The Measure class.
+    f_out_format_Q1 : function
+        The function to format the output table for Q1.
+    plot_var_forecasts2 : function
+        The function to plot variance forecasts.
+    misspecified : bool, optional (default=False)
+        Whether the model is misspecified or not.
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, object]
+        The output table and the plot of variance forecasts for the specified or misspecified model.
+    """
+
+    # Inputs to initialize the MLE
+    time_t = np.datetime64("1996-12-31")
+    ng1996 = ngarch.initialize_at(time_t, log_xreturns, days_in_year)
+
+    time_t = np.datetime64("2020-02-01")
+    ng2020 = ngarch.initialize_at(time_t, log_xreturns, days_in_year)
+
+    if not misspecified:
+        # MLE + new NGARCH parameters
+        ng1996 = f_ngarch(ng1996)
+        ng2020 = f_ngarch(ng2020)
+
+    # Output table
+    out_Q1 = f_out_format_Q1([ng1996, ng2020])
+
+    # Inputs for the simulations
+    n_days = 10 * days_in_year
+    n_paths = 10000
+
+    # Simulation under P
+    P_1996 = measure(*ng1996.simulateP(100, n_days, n_paths, ng1996.P_predict_h()))
+    P_2020 = measure(
+        *ng2020.simulateP(100, n_days, n_paths, ng2020.P_predict_h(), P_1996.z)
+    )
+
+    # Simulation under Q
+    Q_1996 = measure(
+        *ng1996.simulateQ(100, n_days, n_paths, ng1996.Q_predict_h(), P_1996.z)
+    )
+    Q_2020 = measure(
+        *ng2020.simulateQ(100, n_days, n_paths, ng2020.Q_predict_h(), P_1996.z)
+    )
+
+    # Plot of the predicted conditional variances
+    horizon = np.arange(1, n_days + 2) / days_in_year
+    plot = plot_var_forecasts2(
+        horizon=horizon, P=[P_1996, P_2020], Q=[Q_1996, Q_2020], annualized=True
+    )
+
+    return out_Q1, plot
+
+
 
 
 def f_add_DTM(option_info: pd.DataFrame) -> pd.DataFrame:
