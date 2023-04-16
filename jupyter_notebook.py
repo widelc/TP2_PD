@@ -25,6 +25,7 @@ from matplotlib import gridspec
 
 # plt.style.use('seaborn')
 
+
 # Inspired from https://www.overleaf.com/learn/latex/Font_sizes%2C_families%2C_and_styles#Reference_guide
 class __fs:
     small = 12
