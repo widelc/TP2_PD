@@ -182,7 +182,7 @@ class ngarch(model):
 
     def P_predict_h(self):
         theta = [self.lmbda, self.alpha, self.beta, self.gamma]
-        h_t, eps = f_ht_NGARCH(theta, self)
+        h_t, eps = f_ht_ngarch(theta, self)
         return (
             self.omega
             + self.alpha * h_t[-1] * ((eps[-1] - self.gamma) ** 2)
@@ -191,7 +191,7 @@ class ngarch(model):
 
     def Q_predict_h(self):
         theta = [self.lmbda, self.alpha, self.beta, self.gamma]
-        h_t, eps = f_ht_NGARCH(theta, self)
+        h_t, eps = f_ht_ngarch(theta, self)
         return (
             self.omega
             + self.alpha * h_t[-1] * ((eps[-1] - self.gamma - self.lmbda) ** 2)
@@ -311,8 +311,8 @@ def plot_var_forecasts2(
 
     Args:
         horizon: Maturities to compute forecasts.
-        P: List of NGARCH models of P series.
-        Q: List of NGARCH models of Q series.
+        P: List of ngarch models of P series.
+        Q: List of ngarch models of Q series.
         annualized: Whether to annualize the variance.
 
     Returns:
@@ -361,8 +361,8 @@ def plot_var_forecasts(
 
     Args:
         horizon: List of maturities to compute forecasts.
-        P: List of NGARCH models for P.
-        Q: List of NGARCH models for Q.
+        P: List of ngarch models for P.
+        Q: List of ngarch models for Q.
         annualized: Whether to annualize the variance.
 
     Returns:
@@ -439,20 +439,20 @@ def plot_iv_surface3d(option_info: pd.DataFrame, date: str = "1996-12-03") -> No
     return None
 
 
-def f_ht_NGARCH(theta: List[float], ng: ngarch) -> Tuple[np.ndarray, np.ndarray]:
+def f_ht_ngarch(theta: List[float], ng: ngarch) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Compute conditional variances and innovations from the parameters of the NGARCH model and the data from `ng`.
+    Compute conditional variances and innovations from the parameters of the ngarch model and the data from `ng`.
 
     Parameters
     ----------
     theta : List[float]
-        Parameters of the NGARCH model.
+        Parameters of the ngarch model.
         theta[0] is lmbda.
         theta[1] is alpha.
         theta[2] is beta.
         theta[3] is gamma.
     ng : ngarch
-        NGARCH model containing the data.
+        ngarch model containing the data.
 
     Returns
     -------
@@ -496,41 +496,41 @@ def f_ht_NGARCH(theta: List[float], ng: ngarch) -> Tuple[np.ndarray, np.ndarray]
     return h_t, eps
 
 
-def f_nll_NGARCH(theta: List[float], ng: ngarch) -> float:
+def f_nll_ngarch(theta: List[float], ng: ngarch) -> float:
     """
-    Fonction de vraisemblance négative (negative log-likelihood) pour le modèle NGARCH.
+    Fonction de vraisemblance négative (negative log-likelihood) pour le modèle ngarch.
 
     Paramètres :
     -----------
     theta : list[float]
         Liste des paramètres.
-    ng : NGARCH
-        Instance de la classe NGARCH contenant les données et les paramètres.
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres.
 
     Renvoie :
     ---------
     nll : float
         Vraisemblance négative pour les paramètres donnés.
     """
-    h, eps = f_ht_NGARCH(theta, ng)
+    h, eps = f_ht_ngarch(theta, ng)
     nll = -0.5 * np.sum(np.log(2 * np.pi * h) + eps**2)
 
     return -nll
 
 
-def f_NGARCH(ng: ngarch) -> ngarch:
+def f_ngarch(ng: ngarch) -> ngarch:
     """
-    Fonction pour estimer les paramètres du modèle NGARCH.
+    Fonction pour estimer les paramètres du modèle ngarch.
 
     Paramètres :
     -----------
-    ng : NGARCH
-        Instance de la classe NGARCH contenant les données et les paramètres initiaux.
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres initiaux.
 
     Renvoie :
     ---------
-    ng : NGARCH
-        Instance de la classe NGARCH contenant les données et les paramètres estimés.
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres estimés.
     """
     # Initial guess
     theta_0 = [ng.lmbda, ng.alpha, ng.beta, ng.gamma]
@@ -543,7 +543,7 @@ def f_NGARCH(ng: ngarch) -> ngarch:
         "fun": lambda x: np.array([1 - x[1] * (1 + (x[3] ** 2)) - x[2]]),
     }
     opt = minimize(
-        fun=f_nll_NGARCH,
+        fun=f_nll_ngarch,
         x0=theta_0,
         args=ng,
         method="SLSQP",
@@ -1038,16 +1038,16 @@ def simulate_returns(
     option_info: pd.DataFrame, ng1996: ngarch, ng2020: ngarch, n_paths: int = 100_000
 ) -> pd.DataFrame:
     """
-    Simule les rendements pour chaque option dans option_info à partir des modèles NGARCH pour les années 1996 et 2020.
+    Simule les rendements pour chaque option dans option_info à partir des modèles ngarch pour les années 1996 et 2020.
 
     Paramètres :
     ------------
     option_info : pd.DataFrame
         DataFrame contenant les données des options.
     ng1996 : ngarch
-        Modèle NGARCH pour l'année 1996.
+        Modèle ngarch pour l'année 1996.
     ng2020 : ngarch
-        Modèle NGARCH pour l'année 2020.
+        Modèle ngarch pour l'année 2020.
     n_paths : int, optionnel (défaut=100_000)
         Le nombre de chemins de simulations pour chaque modèle.
 
@@ -1101,12 +1101,12 @@ def simulate_returns(
 def calculate_option_prices(
     option_info: pd.DataFrame, ng1996: ngarch, ng2020: ngarch
 ) -> pd.DataFrame:
-    """Calculate the option prices based on the NGARCH models.
+    """Calculate the option prices based on the ngarch models.
 
     Args:
         option_info: DataFrame containing the option information.
-        ng1996: NGARCH model fitted to data from 1996-12-03.
-        ng2020: NGARCH model fitted to data from 2020-02-03.
+        ng1996: ngarch model fitted to data from 1996-12-03.
+        ng2020: ngarch model fitted to data from 2020-02-03.
 
     Returns:
         DataFrame with the option prices.
@@ -1122,7 +1122,7 @@ def calculate_option_prices(
     option_info_96 = option_info[option_info.date == date_unique[0]]
     option_info_20 = option_info[option_info.date == date_unique[1]]
 
-    # Calculate the option prices using the NGARCH models and the option_info DataFrames split by dates
+    # Calculate the option prices using the ngarch models and the option_info DataFrames split by dates
     option_price_96 = [
         ng1996.option_price(
             info.R_j,
