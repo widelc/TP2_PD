@@ -537,7 +537,7 @@ def f_ngarch(ng: ngarch) -> ngarch:
 
     # Optimization (and ignore warnings)
     warnings.simplefilter("ignore")
-    bounds = [(0, None), (0, 1), (0.5, 1), (0, None)]
+    bounds = [(0, 10), (0, 1), (0.5, 1), (0, 10)]
     ineq_cons = {
         "type": "ineq",
         "fun": lambda x: np.array([1 - x[1] * (1 + (x[3] ** 2)) - x[2]]),
@@ -563,66 +563,7 @@ def f_ngarch(ng: ngarch) -> ngarch:
     return ng
 
 
-def check_constraints_and_stationarity(
-    df: pd.DataFrame, bounds: list = [(0, None), (0, 1), (0.5, 1), (0, None)]
-) -> bool:
-    """
-    Verifies if constraints and stationarity condition are satisfied.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The DataFrame containing the NGARCH model parameters.
-    bounds : list
-        The constraints on the NGARCH model parameters.
-
-    Returns
-    -------
-    bool
-        True if all constraints and stationarity condition are satisfied, False otherwise.
-    """
-
-    # Extract the parameters from the DataFrame
-    lambda_values = [float(x) for x in df["λ"]]
-    omega_values = [float(x) for x in df["ω"]]
-    alpha_values = [float(x) for x in df["α"]]
-    beta_values = [float(x) for x in df["β"]]
-    gamma_values = df["γ"]
-
-    # Check constraints for each parameter
-    for i, (lmbda, omega, alpha, beta, gamma) in enumerate(
-        zip(lambda_values, omega_values, alpha_values, beta_values, gamma_values)
-    ):
-        if not (
-            bounds[0][0] <= lmbda <= bounds[0][1]
-            if bounds[0][1] is not None
-            else bounds[0][0] <= lmbda
-        ):
-            print(f"Constraint not satisfied for λ at index {i}")
-            return False
-
-        if not (bounds[1][0] <= omega <= bounds[1][1]):
-            print(f"Constraint not satisfied for ω at index {i}")
-            return False
-
-        if not (bounds[2][0] <= gamma <= bounds[2][1]):
-            print(f"Constraint not satisfied for γ at index {i}")
-            return False
-
-        if not (
-            bounds[3][0] <= beta <= bounds[3][1]
-            if bounds[3][1] is not None
-            else bounds[3][0] <= beta
-        ):
-            print(f"Constraint not satisfied for β at index {i}")
-            return False
-
-        # Check the stationarity condition
-        if not (alpha * (1 + gamma**2) + beta < 1):
-            print(f"Stationarity condition not satisfied at index {i}")
-            return False
-
-    return True
 
 
 def f_out_format_Q1(ng_vec):
@@ -649,6 +590,61 @@ def f_out_format_Q1(ng_vec):
     df = pd.DataFrame(data=data, index=["1996-12-31", "2020-02-01"])
 
     return df
+
+
+def check_constraints_and_stationarity(df: pd.DataFrame, bounds: list) -> bool:
+    """
+    Verifies if constraints and stationarity condition are satisfied.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame containing the NGARCH model parameters.
+    bounds : list
+        The constraints on the NGARCH model parameters.
+
+    Returns
+    -------
+    bool
+        True if all constraints and stationarity condition are satisfied, False otherwise.
+    """
+
+    # Extract the parameters from the DataFrame
+    lambda_values = [float(x) for x in df["λ"]]
+    omega_values = [float(x) for x in df["ω"]]
+    alpha_values = [float(x) for x in df["α"]]
+    beta_values = [float(x) for x in df["β"]]
+    gamma_values = [float(x) for x in df["γ"]]
+
+    # Check constraints for each parameter
+    for i, (lmbda, omega, alpha, beta, gamma) in enumerate(zip(lambda_values, omega_values, alpha_values, beta_values, gamma_values)):
+        if not (bounds[0][0] <= lmbda <= bounds[0][1]):
+            print(f"Constraint not satisfied for λ at index {i}")
+            return False
+
+        if not (bounds[1][0] <= omega <= bounds[1][1]):
+            print(f"Constraint not satisfied for ω at index {i}")
+            return False
+
+        if not (bounds[2][0] <= alpha <= bounds[2][1]):
+            print(f"Constraint not satisfied for α at index {i}")
+            return False
+
+        if not (bounds[3][0] <= beta <= bounds[3][1]):
+            print(f"Constraint not satisfied for β at index {i}")
+            return False
+
+        if not (bounds[4][0] <= gamma <= bounds[4][1]):
+            print(f"Constraint not satisfied for γ at index {i}")
+            return False
+
+        # Check the stationarity condition
+        if not (alpha * (1 + gamma**2) + beta < 1):
+            print(f"Stationarity condition not satisfied at index {i}")
+            return False
+
+    return True
+
 
 
 def f_add_DTM(option_info: pd.DataFrame) -> pd.DataFrame:
