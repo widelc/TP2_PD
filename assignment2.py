@@ -697,8 +697,8 @@ def compute_model_Q1(
     out_Q1 = f_out_format_Q1([ng1996, ng2020])
 
     # Inputs for the simulations
-    n_days = horizon * days_in_year
-    n_paths = 10000
+    n_days = 10 * days_in_year
+    n_paths = 10_000
 
     # Simulation under P
     P_1996 = measure(*ng1996.simulateP(100, n_days, n_paths, ng1996.P_predict_h()))
