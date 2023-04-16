@@ -538,7 +538,7 @@ def f_ngarch(ng: ngarch) -> ngarch:
 
     # Optimization (and ignore warnings)
     warnings.simplefilter("ignore")
-    bounds = [(0, 10), (0, 1), (0.5, 1), (0, 10)]
+    bounds = [(0, None), (0, 1), (0.5, 1), (0, None)]
     ineq_cons = {
         "type": "ineq",
         "fun": lambda x: np.array([1 - x[1] * (1 + (x[3] ** 2)) - x[2]]),
