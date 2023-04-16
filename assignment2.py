@@ -1280,3 +1280,99 @@ def calculate_option_prices(
 
     # Return the option_info DataFrame with the calculated option prices
     return option_info
+
+
+def f_plot_Q5_smiles(option_info: pd.DataFrame, date: str, date_str: str) -> None:
+    """
+    Trace un graphique de sourire de volatilité pour une date donnée.
+
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+    date : str
+        Date pour laquelle tracer le graphique.
+    date_str : str
+        Chaîne de caractères pour le titre du graphique.
+
+    Renvoie :
+    ---------
+    None
+    """
+    option_info_t = option_info[option_info.date == date]
+    DTM_unique = np.unique(option_info_t.DTM)
+
+    y_sub = math.ceil(len(DTM_unique) / 3)
+    fig, axes = plt.subplots(y_sub, 3, figsize=(42, 30))
+
+    i = 1
+    for dtm in DTM_unique:
+        # Garder seulement les options OTM
+        data_call = option_info_t[
+            (option_info_t.DTM == dtm) & (option_info_t.cp_flag == "C")
+        ]
+        data_put = option_info_t[
+            (option_info_t.DTM == dtm) & (option_info_t.cp_flag == "P")
+        ]
+
+        moneyness_call = data_call.strike_price / (1000 * data_call.S_t)
+        moneyness_put = data_put.strike_price / (1000 * data_put.S_t)
+
+        warnings.simplefilter("ignore")
+        data_call["K/S"] = moneyness_call
+        data_put["K/S"] = moneyness_put
+        warnings.resetwarnings()
+
+        data_call_OTM = data_call[data_call["K/S"] >= 1].sort_values(["K/S"])
+        data_put_OTM = data_put[data_put["K/S"] <= 1].sort_values(["K/S"])
+
+        data_plot = pd.concat([data_put_OTM, data_call_OTM])
+
+        ax = plt.subplot(y_sub, 3, i)
+
+        ax.plot(
+            data_plot["K/S"],
+            data_plot["IV_method1"],
+            "g--",
+            linewidth=2,
+            label="Methode 1",
+        )
+        ax.plot(
+            data_plot["K/S"],
+            data_plot["IV_method2"],
+            "r--",
+            linewidth=2,
+            label="Methode 2",
+        )
+        ax.plot(
+            data_plot["K/S"],
+            data_plot["impl_volatility"],
+            "b--",
+            linewidth=2,
+            label="OptionMetrics",
+        )
+        
+        ax.plot(
+            data_plot["K/S"],
+            data_plot["IV_NGARCH"],
+            "-.",
+            linewidth=2,
+            label="IV_NGARCH",
+            )
+        
+        x_pos = (max(data_plot["K/S"]) + min(data_plot["K/S"])) * 0.5
+        y_pos = (
+            (max(data_plot["IV_method1"]) + min(data_plot["IV_method1"])) * 0.5 * 1.25
+        )
+        ax.text(x_pos, y_pos, "DTM = " + str(dtm) + " days", fontsize=25)
+
+        i += 1
+
+    lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes][0]
+    fig.legend(lines_labels[0], lines_labels[1], loc="upper left", fontsize=45)
+    fig.suptitle(
+        "Volatility smiles : " + date_str + "\n Graphique de IV vs K/S", fontsize=75
+    )
+    plt.show()
+
+    return None
