@@ -563,9 +563,6 @@ def f_ngarch(ng: ngarch) -> ngarch:
     return ng
 
 
-
-
-
 def f_out_format_Q1(ng_vec):
     # Output table
     days_in_year = ng_vec[0].days_in_year
@@ -617,7 +614,9 @@ def check_constraints_and_stationarity(df: pd.DataFrame, bounds: list) -> bool:
     gamma_values = [float(x) for x in df["γ"]]
 
     # Check constraints for each parameter
-    for i, (lmbda, omega, alpha, beta, gamma) in enumerate(zip(lambda_values, omega_values, alpha_values, beta_values, gamma_values)):
+    for i, (lmbda, omega, alpha, beta, gamma) in enumerate(
+        zip(lambda_values, omega_values, alpha_values, beta_values, gamma_values)
+    ):
         if not (bounds[0][0] <= lmbda <= bounds[0][1]):
             print(f"Constraint not satisfied for λ at index {i}")
             return False
@@ -644,7 +643,6 @@ def check_constraints_and_stationarity(df: pd.DataFrame, bounds: list) -> bool:
             return False
 
     return True
-
 
 
 def f_add_DTM(option_info: pd.DataFrame) -> pd.DataFrame:
