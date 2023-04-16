@@ -1,16 +1,11 @@
-import datetime as dt
 import os
 import sys
-import inspect
-import warnings
 import pandas as pd
-import numpy as np
+import math
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
-from pprint import pprint
 from math import pi
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+
 
 
 
@@ -188,22 +183,14 @@ class ngarch(model):
         return -2 * self.gamma / np.sqrt(2 + 4 * self.gamma**2)
 
     def P_predict_h(self):
-        theta = [self.lmbda, self.omega, self.alpha, self.beta, self.gamma]
-        h_t, eps = f_ht_NGARCH(theta, self.log_xret)
-        return (
-            self.omega
-            + self.alpha * h_t[-1] * ((eps[-1] - self.gamma) ** 2)
-            + self.beta * h_t[-1]
-        )
+        theta     = [self.lmbda, self.alpha, self.beta, self.gamma]
+        h_t, eps  = f_ht_NGARCH(theta, self)
+        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma) ** 2) + self.beta * h_t[-1]
 
     def Q_predict_h(self):
-        theta = [self.lmbda, self.omega, self.alpha, self.beta, self.gamma]
-        h_t, eps = f_ht_NGARCH(theta, self.log_xret)
-        return (
-            self.omega
-            + self.alpha * h_t[-1] * ((eps[-1] - self.gamma - self.lmbda) ** 2)
-            + self.beta * h_t[-1]
-        )
+        theta     = [self.lmbda, self.alpha, self.beta, self.gamma]
+        h_t, eps  = f_ht_NGARCH(theta, self)
+        return self.omega + self.alpha * h_t[-1] * ((eps[-1] - self.gamma - self.lmbda) ** 2) + self.beta * h_t[-1]
 
     def simulateP(self, S_t0, n_days, n_paths, h_tp1, z=None):
         """Simulate excess returns and their variance under the P measure
@@ -276,11 +263,8 @@ class ngarch(model):
     def option_price(self, cum_ex_r, F_t0_T, K, rf, dtm, is_call):
 
         cp = [1 if cond else -1 for cond in [is_call]][0]
-
         disc = np.exp(-rf * dtm / self.days_in_year)
-
         payoff = np.maximum(0, ((F_t0_T * cum_ex_r) - K) * cp)
-
         option_price = np.mean(disc * payoff)
 
         return option_price
@@ -313,30 +297,69 @@ def plot_excess_return_forecasts(horizon, P, Q, annualized=False):
     return axes
 
 
-def plot_var_forecasts(horizon, P, Q, annualized=False):
+def plot_var_forecasts2(horizon, P, Q, annualized=False):
 
-    P.expected_h = np.mean(P.h, axis=1)
-    Q.expected_h = np.mean(Q.h, axis=1)
-
-    y_prefix = ""
+    title = ['1996-12-03', '2020-02-03']
+    ann = [1.0]
+    y_prefix = ''
     if annualized:
-        days_in_year = 1 / horizon[0]
-        P.expected_h = P.expected_h * days_in_year
-        Q.expected_h = Q.expected_h * days_in_year
-        y_prefix = "Annualized "
+        ann = horizon
+        y_prefix = 'Annualized '
 
-    fig, ax = plt.subplots()
-    ax.plot(horizon, P.expected_h, label="P Var forecasts (sim)")
-    ax.plot(horizon, Q.expected_h, label="Q Var forecasts (sim)")
-    ax.legend(loc="upper right")
-    ax.set_xlabel("Years to Maturity")
-    ax.set_ylabel(y_prefix + "Variance")
-    ax.set_title("Simulated Conditionnal Variance Forecast")
+    fig,axes = plt.subplots(2,len(P), figsize=(14,10))
+    j = 0
+    for i in range(len(P)):
+        Pi = P[i]
+        Qi = Q[i]
 
-    return ax
+        #ax = plt.subplot(2,2, j)
+        axes[j,i].plot(horizon, np.mean(Pi.h,axis=1)/ann[0], label='P variance forecasts (sim)')
+        axes[j,i].plot(horizon, np.mean(Qi.h,axis=1)/ann[0], label='Q variance forecasts (sim)')
+        axes[j,i].legend(loc='best')
+        axes[j,i].set_ylabel(y_prefix+'Variance')
+        axes[j,i].set_title(title[i])
+
+        #ax = plt.subplot(2,2, j)
+        j += 1
+        vrp = np.cumsum(np.mean(Pi.h,axis=1) - np.mean(Qi.h,axis=1))/ann
+        axes[j,i].plot(horizon, vrp)
+        axes[j,i].set_ylabel(y_prefix+'Variance Risk Premium')
+        axes[j,i].set_xlabel('Years to Maturity')
+        j -= 1
+
+    return axes
 
 
-def plot_iv_surface(option_info, date="1996-12-03"):
+def plot_var_forecasts(horizon, P, Q, annualized=False):
+    title = ['1996-12-03', '2020-02-03']
+    fig, axes = plt.subplots(len(P), 1, figsize=(14, 10))
+    for i in range(len(P)):
+
+        p = P[i]
+        q = Q[i]
+
+        p.expected_h = np.mean(p.h, axis=1)
+        q.expected_h = np.mean(q.h, axis=1)
+
+        if annualized:
+            days_in_year = 1 / horizon[0]
+            p.expected_h = p.expected_h * days_in_year
+            q.expected_h = q.expected_h * days_in_year
+            y_prefix = 'Annualized '
+
+        ax = plt.subplot(2, 1, i + 1)
+        ax.plot(horizon, p.expected_h, label='P Var forecasts (sim)')
+        ax.plot(horizon, q.expected_h, label='Q Var forecasts (sim)')
+        ax.legend(loc='upper right')
+        ax.set_ylabel(y_prefix + 'Variance')
+        ax.set_title(title[i])
+
+    ax.set_xlabel('Years to Maturity')
+
+    return axes
+
+
+def plot_iv_surface3d(option_info, date="1996-12-03"):
     df_date = option_info[option_info["date"] == date][
         ['K/S', 'DTM', 'impl_volatility']]
 
@@ -360,17 +383,18 @@ def plot_iv_surface(option_info, date="1996-12-03"):
     plt.show()
 
 
-def f_ht_NGARCH(theta, log_xreturns):
 
+
+def f_ht_NGARCH(theta, ng):
     # Extract data from ng
     lmbda = theta[0]
-    omega = theta[1]
-    alpha = theta[2]
-    beta = theta[3]
-    gamma = theta[4]
+    omega = ng.omega
+    alpha = theta[1]
+    beta = theta[2]
+    gamma = theta[3]
 
     # Get rid of the NA at the beggining
-    log_xreturns = log_xreturns[1:]
+    log_xreturns = ng.log_xret[1:]
 
     # Initialize the conditional variances
     T = len(log_xreturns)
@@ -378,59 +402,58 @@ def f_ht_NGARCH(theta, log_xreturns):
     eps = np.full(T, np.nan)
 
     # Start with unconditional variances
-    h_t_ini = omega / (1 - alpha * (1 + (gamma**2)) - beta)
-    eps_ini = (log_xreturns[0] - lmbda * np.sqrt(h_t_ini) + 0.5 * h_t_ini) / np.sqrt(
-        h_t_ini
-    )
+    h_t_ini = omega / (1 - alpha * (1 + (gamma ** 2)) - beta)
+    eps_ini = (log_xreturns[0] - lmbda * np.sqrt(
+        h_t_ini) + 0.5 * h_t_ini) / np.sqrt(h_t_ini)
 
     h_t[0] = h_t_ini
     eps[0] = eps_ini
 
     # Compute conditional variance and innovations at each step
     for t in range(T - 1):
-        h_t[t + 1] = omega + alpha * h_t[t] * ((eps[t] - gamma) ** 2) + beta * h_t[t]
-        eps[t + 1] = (
-            log_xreturns[t + 1] - lmbda * np.sqrt(h_t[t + 1]) + 0.5 * h_t[t + 1]
-        ) / np.sqrt(h_t[t + 1])
+        h_t[t + 1] = omega + alpha * h_t[t] * ((eps[t] - gamma) ** 2) + beta * \
+                     h_t[t]
+        eps[t + 1] = (log_xreturns[t + 1] - lmbda * np.sqrt(h_t[t + 1]) + 0.5 *
+                      h_t[t + 1]) / np.sqrt(h_t[t + 1])
 
     return h_t, eps
 
 
-def f_nll_NGARCH(theta, log_xreturns):
-
-    h, eps = f_ht_NGARCH(theta, log_xreturns)
-    nll = -0.5 * np.sum(np.log(2 * pi * h) + eps**2)
+def f_nll_NGARCH(theta, ng):
+    h, eps = f_ht_NGARCH(theta, ng)
+    nll = -0.5 * np.sum(np.log(2 * pi * h) + eps ** 2)
 
     return -nll
 
 
 def f_NGARCH(ng):
-
     # Initial guess
-    theta_0 = [ng.lmbda, ng.omega, ng.alpha, ng.beta, ng.gamma]
+    theta_0 = [ng.lmbda, ng.alpha, ng.beta, ng.gamma]
 
     # Optimization (and ignore warnings)
-    warnings.simplefilter("ignore")
-    bounds = [(None, None), (1e-8, None), (1e-8, None), (1e-8, None), (1e-8, None)]
-    opt = minimize(
-        fun=f_nll_NGARCH,
-        x0=theta_0,
-        args=ng.log_xret,
-        method="Nelder-Mead",
-        bounds=bounds,
-        options={"maxiter": 5000},
-    )
+    warnings.simplefilter('ignore')
+    bounds = [(0, None), (0, 1), (0.5, 1), (0, None)]
+    ineq_cons = {'type': 'ineq',
+                 'fun': lambda x: np.array(
+                     [1 - x[1] * (1 + (x[3] ** 2)) - x[2]])}
+    opt = minimize(fun=f_nll_NGARCH,
+                   x0=theta_0,
+                   args=ng,
+                   method='SLSQP',
+                   bounds=bounds,
+                   constraints=ineq_cons,
+                   options={'maxiter': 5000})
     warnings.resetwarnings()
 
     # Update parameters value in ng
     param = opt.x
     ng.lmbda = param[0]
-    ng.omega = param[1]
-    ng.alpha = param[2]
-    ng.beta = param[3]
-    ng.gamma = param[4]
+    ng.alpha = param[1]
+    ng.beta = param[2]
+    ng.gamma = param[3]
 
     return ng
+
 
 
 def f_out_format_Q1(ng_vec):
@@ -514,19 +537,9 @@ def f_clean_table(option_info, spx, keep_moneyness=False):
     option_info = option_info[option_info['DTM'] > 7]
     option_info = option_info[option_info['DTM'] < 550]
 
-    keep_col = [
-        "date",
-        "exdate",
-        "cp_flag",
-        "strike_price",
-        "mean_bidask",
-        "impl_volatility",
-        "delta",
-        "gamma",
-        "vega",
-        "theta",
-        "DTM",
-    ]
+    keep_col = ['date', 'exdate', 'cp_flag', 'strike_price', 'volume',
+                'best_bid', 'mean_bidask', 'open_interest', 'impl_volatility',
+                'DTM']
 
     if keep_moneyness:
         option_info = f_add_moneyness(option_info, spx)
@@ -563,51 +576,36 @@ def f_add_Q3_info(option_info, days_in_year):
     return option_info
 
 
-def f_F_CBOE(option_info: pd.DataFrame) -> pd.DataFrame:
-    """
-    Calcule le prix forward implicite en utilisant l'approche du CBOE.
-
-    Parameters
-    ----------
-    option_info : pd.DataFrame
-        DataFrame contenant les informations sur les options, y compris les dates, les prix d'exercice,
-        les prix moyens d'offre et de demande, et les drapeaux d'appel/put (cp_flag).
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame d'origine avec une nouvelle colonne "F_CBOE" contenant les prix forward implicites estimés.
-    """
-
-    # Ajoute une nouvelle colonne "F_CBOE" au DataFrame avec des valeurs manquantes (pd.NA) par défaut
-    option_info["F_CBOE"] = pd.NA
-
-    # Obtient les valeurs uniques de DTM (Days to Maturity) et de date
+def f_F_CBOE(option_info, days_in_year):
+    option_info['F_CBOE'] = pd.NA
     DTM_unique = np.unique(option_info.DTM)
     date_unique = np.unique(option_info.date)
 
-    # Parcourt toutes les combinaisons de DTM et de date uniques
     for dtm in DTM_unique:
-
+        option_DTM_i = option_info[option_info.DTM == dtm]
         for date in date_unique:
 
-            # date = np.datetime64(date)
-            option_DTM_i = option_info[option_info.DTM == dtm]
+            # Garder les options pour la bonne date et avec lesquelles on a un put et un call pour un strike
             option_DTM_ti = option_DTM_i[
-                option_DTM_i.date == date].sort_values(['cp_flag', 'K/F'])
+                option_DTM_i.date == date].sort_values(
+                ['strike_price', 'cp_flag'])
+
+            df = option_DTM_ti[option_DTM_ti.best_bid != 0]
+            df = option_DTM_ti[
+                option_DTM_ti.duplicated(subset=['strike_price'], keep=False)]
 
             if not option_DTM_ti.empty:
-                call_OTM = option_DTM_ti[option_DTM_ti.cp_flag == 'C'].loc[
-                    option_DTM_ti['K/F'] > 1]
-                put_OTM = option_DTM_ti[option_DTM_ti.cp_flag == 'P'].loc[
-                    option_DTM_ti['K/F'] < 1]
-                option_OTM = pd.concat([put_OTM, call_OTM])
 
-                forward_price = interp1d(option_OTM['K/F'], option_OTM["F"],
-                                         kind='linear')
-                forward = forward_price(1)
+                diff = df.groupby('strike_price')['mean_bidask'].apply(
+                    lambda x: x[x.index[0]] - x[x.index[1]])
 
-                option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
+                if not diff.empty:
+                    K_diff_min = diff.abs().idxmin()
+                    diff_min = diff[K_diff_min]
+                    forward = (K_diff_min / 1000) + diff_min * np.exp(
+                        option_DTM_ti.r_f * dtm / days_in_year)
+
+                    option_info.loc[option_DTM_ti.index, 'F_CBOE'] = forward
 
     return option_info
 
@@ -642,7 +640,94 @@ def create_comparison_df(option_info):
     return comparison_df
 
 
-def simulate_returns(option_info, ng1996, ng2020, n_paths=100000):
+def f_plot_Q3_comparison(option_info):
+    title = ['1996-12-03', '2020-02-03']
+
+    df = option_info.drop_duplicates(
+        subset=['date', 'DTM', 'exdiv_1', 'exdiv_2'])
+    df = df[['date', 'DTM', 'exdiv_1', 'exdiv_2']].sort_values(
+        ['date', 'DTM']).reset_index(drop=True)
+    df = df.dropna()
+
+    i = 1
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+    for date in np.unique(option_info.date):
+        data = df[df['date'] == date]
+
+        ax = plt.subplot(2, 1, i)
+        ax.scatter(data['DTM'], data['exdiv_1'], label='Methode 1', s=15,
+                   edgecolor='black', linewidth=0.5, alpha=0.8)
+        ax.scatter(data['DTM'], data['exdiv_2'], label='Methode 2', s=15,
+                   edgecolor='black', linewidth=0.5, alpha=0.8)
+
+        ax.set_title(title[i - 1])
+        ax.set_ylabel('Prix ex-dividende')
+        ax.legend()
+        ax.set_xscale('log')
+        ax.set_xticks([20, 50, 150, 400])
+        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+
+        i += 1
+
+    ax.set_xlabel('Jours à maturité')
+
+    return axes
+
+
+def f_plot_Q4_smiles(option_info, date, date_str):
+    option_info_t = option_info[option_info.date == date]
+    DTM_unique = np.unique(option_info_t.DTM)
+
+    y_sub = math.ceil(len(DTM_unique) / 3)
+    fig, axes = plt.subplots(y_sub, 3, figsize=(42, 30))
+
+    i = 1
+    for dtm in DTM_unique:
+        # Garder seulement les options OTM
+        data_call = option_info_t[
+            (option_info_t.DTM == dtm) & (option_info_t.cp_flag == 'C')]
+        data_put = option_info_t[
+            (option_info_t.DTM == dtm) & (option_info_t.cp_flag == 'P')]
+
+        moneyness_call = data_call.strike_price / (1000 * data_call.S_t)
+        moneyness_put = data_put.strike_price / (1000 * data_put.S_t)
+
+        warnings.simplefilter('ignore')
+        data_call['K/S'] = moneyness_call
+        data_put['K/S'] = moneyness_put
+        warnings.resetwarnings()
+
+        data_call_OTM = data_call[data_call['K/S'] >= 1].sort_values(['K/S'])
+        data_put_OTM = data_put[data_put['K/S'] <= 1].sort_values(['K/S'])
+
+        data_plot = pd.concat([data_put_OTM, data_call_OTM])
+
+        ax = plt.subplot(y_sub, 3, i)
+
+        ax.plot(data_plot['K/S'], data_plot['IV_method1'], 'g--', linewidth=2,
+                label='Methode 1')
+        ax.plot(data_plot['K/S'], data_plot['IV_method2'], 'r--', linewidth=2,
+                label='Methode 2')
+        ax.plot(data_plot['K/S'], data_plot['impl_volatility'], 'b--',
+                linewidth=2, label='OptionMetrics')
+        x_pos = (max(data_plot['K/S']) + min(data_plot['K/S'])) * 0.5
+        y_pos = (max(data_plot['IV_method1']) + min(
+            data_plot['IV_method1'])) * 0.5 * 1.25
+        ax.text(x_pos, y_pos, 'DTM = ' + str(dtm) + ' days', fontsize=25)
+
+        i += 1
+
+    lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes][0]
+    fig.legend(lines_labels[0], lines_labels[1], loc='upper left', fontsize=45)
+    fig.suptitle(
+        'Volatility smiles : ' + date_str + '\n Graphique de IV vs K/S',
+        fontsize=75)
+    plt.show()
+
+    return None
+
+
+def simulate_returns(option_info, ng1996, ng2020, n_paths=100_000):
     date_unique = np.unique(option_info.date)
     DTM_unique = np.unique(option_info.DTM)
 
