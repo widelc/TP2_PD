@@ -496,7 +496,7 @@ def f_ht_NGARCH(theta: List[float], ng: ngarch) -> Tuple[np.ndarray, np.ndarray]
     return h_t, eps
 
 
-def f_nll_NGARCH(theta: list[float], ng: ngarch) -> float:
+def f_nll_NGARCH(theta: List[float], ng: ngarch) -> float:
     """
     Fonction de vraisemblance négative (negative log-likelihood) pour le modèle NGARCH.
 
@@ -512,7 +512,7 @@ def f_nll_NGARCH(theta: list[float], ng: ngarch) -> float:
     nll : float
         Vraisemblance négative pour les paramètres donnés.
     """
-    h, eps = ng.f_ht_NGARCH(theta)
+    h, eps = f_ht_NGARCH(theta, ng)
     nll = -0.5 * np.sum(np.log(2 * np.pi * h) + eps**2)
 
     return -nll
