@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Any
 import pandas as pd
 import math
 from scipy.optimize import minimize
@@ -646,8 +646,15 @@ def check_constraints_and_stationarity(df: pd.DataFrame, bounds: list) -> bool:
     return True
 
 
-
-def compute_model_Q1(log_xreturns: np.ndarray, days_in_year: int, f_ngarch, measure, f_out_format_Q1, plot_var_forecasts2, misspecified: bool = False) -> Tuple[pd.DataFrame, object]:
+def compute_model_Q1(
+    log_xreturns: np.ndarray,
+    days_in_year: int,
+    horizon: int,
+    f_ngarch,
+    measure,
+    f_out_format_Q1,
+    misspecified: bool = False,
+) -> Tuple[Any, Any, Any, Any, Any, Union[ngarch, Any], Union[ngarch, Any]]:
     """
     Computes the implications on the parameters and plots for a model, which can be specified (optimized) or misspecified (non-optimized).
 
@@ -657,21 +664,21 @@ def compute_model_Q1(log_xreturns: np.ndarray, days_in_year: int, f_ngarch, meas
         The log returns data.
     days_in_year : int
         The number of days in a year.
+    horizon : int
+        The horizon for the simulations.
     f_ngarch : function
         The function to perform NGARCH estimation.
     Measure : class
         The Measure class.
     f_out_format_Q1 : function
         The function to format the output table for Q1.
-    plot_var_forecasts2 : function
-        The function to plot variance forecasts.
     misspecified : bool, optional (default=False)
         Whether the model is misspecified or not.
 
     Returns
     -------
     Tuple[pd.DataFrame, object]
-        The output table and the plot of variance forecasts for the specified or misspecified model.
+        The output table, P_1996, P_2020, Q_1996, Q_2020, ng1996, and ng2020.
     """
 
     # Inputs to initialize the MLE
@@ -690,7 +697,7 @@ def compute_model_Q1(log_xreturns: np.ndarray, days_in_year: int, f_ngarch, meas
     out_Q1 = f_out_format_Q1([ng1996, ng2020])
 
     # Inputs for the simulations
-    n_days = 10 * days_in_year
+    n_days = horizon * days_in_year
     n_paths = 10000
 
     # Simulation under P
@@ -707,14 +714,7 @@ def compute_model_Q1(log_xreturns: np.ndarray, days_in_year: int, f_ngarch, meas
         *ng2020.simulateQ(100, n_days, n_paths, ng2020.Q_predict_h(), P_1996.z)
     )
 
-    # Plot of the predicted conditional variances
-    horizon = np.arange(1, n_days + 2) / days_in_year
-    plot = plot_var_forecasts2(
-        horizon=horizon, P=[P_1996, P_2020], Q=[Q_1996, Q_2020], annualized=True
-    )
-
-    return out_Q1, plot
-
+    return out_Q1, P_1996, P_2020, Q_1996, Q_2020, ng1996, ng2020
 
 
 
