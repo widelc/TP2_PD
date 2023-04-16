@@ -563,6 +563,68 @@ def f_ngarch(ng: ngarch) -> ngarch:
     return ng
 
 
+def check_constraints_and_stationarity(
+    df: pd.DataFrame, bounds: list = [(0, None), (0, 1), (0.5, 1), (0, None)]
+) -> bool:
+    """
+    Verifies if constraints and stationarity condition are satisfied.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame containing the NGARCH model parameters.
+    bounds : list
+        The constraints on the NGARCH model parameters.
+
+    Returns
+    -------
+    bool
+        True if all constraints and stationarity condition are satisfied, False otherwise.
+    """
+
+    # Extract the parameters from the DataFrame
+    lambda_values = [float(x) for x in df["λ"]]
+    omega_values = [float(x) for x in df["ω"]]
+    alpha_values = [float(x) for x in df["α"]]
+    beta_values = [float(x) for x in df["β"]]
+    gamma_values = df["γ"]
+
+    # Check constraints for each parameter
+    for i, (lmbda, omega, alpha, beta, gamma) in enumerate(
+        zip(lambda_values, omega_values, alpha_values, beta_values, gamma_values)
+    ):
+        if not (
+            bounds[0][0] <= lmbda <= bounds[0][1]
+            if bounds[0][1] is not None
+            else bounds[0][0] <= lmbda
+        ):
+            print(f"Constraint not satisfied for λ at index {i}")
+            return False
+
+        if not (bounds[1][0] <= omega <= bounds[1][1]):
+            print(f"Constraint not satisfied for ω at index {i}")
+            return False
+
+        if not (bounds[2][0] <= gamma <= bounds[2][1]):
+            print(f"Constraint not satisfied for γ at index {i}")
+            return False
+
+        if not (
+            bounds[3][0] <= beta <= bounds[3][1]
+            if bounds[3][1] is not None
+            else bounds[3][0] <= beta
+        ):
+            print(f"Constraint not satisfied for β at index {i}")
+            return False
+
+        # Check the stationarity condition
+        if not (alpha * (1 + gamma**2) + beta < 1):
+            print(f"Stationarity condition not satisfied at index {i}")
+            return False
+
+    return True
+
+
 def f_out_format_Q1(ng_vec):
     # Output table
     days_in_year = ng_vec[0].days_in_year
