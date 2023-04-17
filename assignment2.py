@@ -214,12 +214,10 @@ class ngarch(model):
     
     def option_price(self, cum_ex_r, F_t0_T, K, rf, dtm, is_call):
         
-        cp = [1 if cond else -1 for cond in [is_call]][0]
-
+        cp     = [1 if cond else -1 for cond in [is_call]][0]
         disc   = np.exp(-rf * dtm / self.days_in_year)
-
         payoff = np.maximum(0,((F_t0_T * cum_ex_r) - K) * cp)
-        
+
         option_price = np.mean(disc * payoff)
 
         return option_price
@@ -249,7 +247,19 @@ def plot_excess_return_forecasts(horizon, P, Q, annualized=False):
 
     return axes
 
-def plot_var_forecasts2(horizon, P, Q, annualized=False):
+def plot_var_forecasts(horizon, P, Q, annualized=False):
+    """Plot variance forecasts and variance risk premium.
+
+    Args:
+        horizon: Maturities to compute forecasts.
+        P: List of ngarch models of P series.
+        Q: List of ngarch models of Q series.
+        annualized: Whether to annualize the variance.
+
+    Returns:
+        Axes of the plot
+
+    """
 
     title = ['1996-12-03', '2020-02-03']
     ann = [1.0]
@@ -281,39 +291,28 @@ def plot_var_forecasts2(horizon, P, Q, annualized=False):
 
     return axes
     
-def plot_var_forecasts(horizon, P, Q, annualized=False):
-
-    title = ['1996-12-03', '2020-02-03']
-    fig,axes = plt.subplots(len(P),1, figsize=(14,10))
-    for i in range(len(P)):
-
-        p = P[i]
-        q = Q[i]
-
-        p.expected_h = np.mean(p.h,axis=1)
-        q.expected_h = np.mean(q.h,axis=1)
-
-
-        if annualized:
-            days_in_year = 1 / horizon[0]
-            p.expected_h = p.expected_h * days_in_year
-            q.expected_h = q.expected_h * days_in_year
-            y_prefix     = 'Annualized '
-
-        ax = plt.subplot(2,1, i+1)
-        ax.plot(horizon, p.expected_h, label='P Var forecasts (sim)')
-        ax.plot(horizon, q.expected_h, label='Q Var forecasts (sim)')
-        ax.legend(loc='upper right')   
-        ax.set_ylabel(y_prefix + 'Variance')
-        ax.set_title(title[i])
-
-    ax.set_xlabel('Years to Maturity')
-    
-    return axes
-
 
 def f_ht_NGARCH(theta, ng):
+    """
+    Compute conditional variances and innovations from the parameters of the ngarch model and the data from `ng`.
 
+    Parameters
+    ----------
+    theta : List[float]
+        Parameters of the ngarch model.
+        theta[0] is lmbda.
+        theta[1] is alpha.
+        theta[2] is beta.
+        theta[3] is gamma.
+    ng : ngarch
+        ngarch model containing the data.
+
+    Returns
+    -------
+    h_t : conditional variances.
+    eps : innovations.
+
+    """
     # Extract data from ng
     lmbda = theta[0]    
     omega = ng.omega
@@ -344,14 +343,40 @@ def f_ht_NGARCH(theta, ng):
     return h_t, eps
 
 def f_nll_NGARCH(theta, ng):
+    """
+    Fonction de vraisemblance négative (negative log-likelihood) pour le modèle ngarch.
 
+    Paramètres :
+    -----------
+    theta : list[float]
+        Liste des paramètres.
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres.
+
+    Renvoie :
+    ---------
+    nll : float
+        Vraisemblance négative pour les paramètres donnés.
+    """
     h, eps = f_ht_NGARCH(theta, ng)
     nll    = -0.5 * np.sum(np.log(2 * pi * h) + eps ** 2)
     
     return -nll
 
 def f_NGARCH(ng):
+    """
+    Fonction pour estimer les paramètres du modèle ngarch.
 
+    Paramètres :
+    -----------
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres initiaux.
+
+    Renvoie :
+    ---------
+    ng : ngarch
+        Instance de la classe ngarch contenant les données et les paramètres estimés.
+    """
     # Initial guess
     theta_0 = [ng.lmbda, ng.alpha, ng.beta, ng.gamma]
 
@@ -397,19 +422,43 @@ def f_out_format_Q1(ng_vec):
     return df
 
 def f_add_DTM(option_info):
+    """
+    Compute days to maturity column from exdate and date columns.
+
+    Args:
+        option_info: A dataframe containing option information.
+
+    Returns:
+        The same dataframe with a new column called DTM.
+
+    """
     option_info['DTM'] = np.array(option_info['exdate'], dtype='datetime64') - np.array(option_info['date'], dtype='datetime64')
     option_info['DTM'] = option_info['DTM'].dt.days
     return option_info
 
 
 def f_describe_table(option_info):
+    """
+    Creates a descriptive table for the given option information.
 
+    Parameters
+    ----------
+    option_info : pd.DataFrame
+        The option information DataFrame.
+    spx : pd.Series
+        The S&P 500 index price data.
+
+    Returns
+    -------
+    pd.DataFrame
+        The descriptive table.
+    """
     # Drop rows with missing IV
     option_info.dropna(subset=['impl_volatility'], how='any', inplace=True)
 
-    # Create DTM column
+    # Create DTM column and moneyness
     option_info = f_add_DTM(option_info)
-
+                
     # Reorganize data and show descriptive table
     warnings.simplefilter('ignore')
     table = option_info.groupby(['date','cp_flag'])[['strike_price','impl_volatility','delta','DTM']].describe()
@@ -422,8 +471,27 @@ def f_describe_table(option_info):
     return table
 
 def f_clean_table(option_info):
+    """
+    Cleans and filters the option information DataFrame.
 
-    keep_col    = ['date','exdate','cp_flag', 'strike_price','volume','best_bid', 'mean_bidask', 'open_interest','impl_volatility','DTM']
+    Parameters
+    ----------
+    option_info : pd.DataFrame
+        The option information DataFrame.
+    spx : pd.Series
+        The S&P 500 index price data.
+    keep_moneyness : bool, optional
+        If True, keep the moneyness column in the resulting DataFrame, by default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        The cleaned and filtered option information DataFrame.
+    """
+    keep_col    = ['date','exdate','cp_flag', 
+                   'strike_price','volume','best_bid', 
+                   'mean_bidask', 'open_interest',
+                   'impl_volatility','DTM']
     option_info['date']   = pd.to_datetime(option_info['date'])
     option_info['exdate'] = pd.to_datetime(option_info['exdate'])
     option_info['mean_bidask'] = (option_info['best_bid'] + option_info['best_offer']) / 2
@@ -432,8 +500,22 @@ def f_clean_table(option_info):
 
     return option_info[keep_col]
 
-def f_add_Q3_info(option_info, days_in_year):
+def f_add_Q3_info(option_info):
+    """
+    Adds additional information (prices, dividend rates, risk-free rates, and moneyness)
+    to the option information DataFrame.
+        Parameters
+    ----------
+    option_info : pd.DataFrame
+        The option information DataFrame.
+    days_in_year : int, optional
+        The number of days in a year, used for calculations, by default 252.
 
+    Returns
+    -------
+    pd.DataFrame
+        The updated option information DataFrame with additional information.
+    """
     # Ajouter les prix et les dividende à option_info
     option_info['S_t'] = get_price(option_info.date)
     option_info['y_t'] = get_dividend_rate(option_info.date)
@@ -446,7 +528,21 @@ def f_add_Q3_info(option_info, days_in_year):
     return option_info
 
 def f_F_CBOE(option_info, days_in_year):
+    """
+    Calculates the CBOE forward price and adds it to the option information DataFrame.
 
+    Parameters
+    ----------
+    option_info : pd.DataFrame
+        The option information DataFrame.
+    days_in_year : int
+        The number of days in a year, used for calculations.
+
+    Returns
+    -------
+    pd.DataFrame
+        The updated option information DataFrame with the CBOE forward price added.
+    """
     option_info['F_CBOE'] = pd.NA
     DTM_unique  = np.unique(option_info.DTM)
     date_unique = np.unique(option_info.date)
@@ -476,7 +572,20 @@ def f_F_CBOE(option_info, days_in_year):
     return option_info
 
 def f_plot_Q3_comparison(option_info):
+    """
+    Trace un graphique comparant les prix ex-dividendes pour deux méthodes différentes
+    pour deux dates différentes.
 
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+
+    Renvoie :
+    ---------
+    axes : np.ndarray
+        Tableau contenant les axes des graphiques.
+    """
     title = ['1996-12-03', '2020-02-03']
 
     df = option_info.drop_duplicates(subset=['date', 'DTM','exdiv_1','exdiv_2'])
@@ -506,8 +615,53 @@ def f_plot_Q3_comparison(option_info):
     
     return axes
 
-def f_plot_Q4_smiles(option_info, date, date_str) : 
+def f_impl_vol_Q4(option_info, days_in_year) :
+    """
+    Calcul les volatiltiés implicites en Question 4
+    
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+    days_in_year: float
+        Nombre de jours considéré dans l'année
 
+    Renvoie :
+    ---------
+    impl_vol_mkt : np.ndarray
+        Tableau de IV associé aux option dans option_info
+        pour les prix ex-div de la question 3
+    """
+    warnings.simplefilter('ignore')
+    impl_vol_mkt = bms.implied_volatility(opt_price = option_info.mean_bidask, 
+                                      S         = [option_info.exdiv_1,option_info.exdiv_2], 
+                                      K         = option_info.strike_price / 1000, 
+                                      r         = option_info.r_f, 
+                                      y         = 0, 
+                                      T         = option_info.DTM / days_in_year, 
+                                      is_call   = (option_info.cp_flag == 'C'))
+    warnings.resetwarnings()
+    
+    return impl_vol_mkt
+
+
+def f_plot_Q4_smiles(option_info, date, date_str) : 
+    """
+    Trace un graphique de sourire de volatilité pour une date donnée.
+
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+    date : str
+        Date pour laquelle tracer le graphique.
+    date_str : str
+        Chaîne de caractères pour le titre du graphique.
+
+    Renvoie :
+    ---------
+    None
+    """
     option_info_t = option_info[option_info.date == date]
     DTM_unique    = np.unique(option_info_t.DTM)
 
@@ -551,3 +705,196 @@ def f_plot_Q4_smiles(option_info, date, date_str) :
     plt.show()
 
     return None
+
+def simulate_returns(
+    option_info: pd.DataFrame, ng1996: ngarch, ng2020: ngarch, n_paths: int = 100_000
+) -> pd.DataFrame:
+    """
+    Simule les rendements pour chaque option dans option_info à partir des modèles ngarch pour les années 1996 et 2020.
+
+    Paramètres :
+    ------------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+    ng1996 : ngarch
+        Modèle ngarch pour l'année 1996.
+    ng2020 : ngarch
+        Modèle ngarch pour l'année 2020.
+    n_paths : int, optionnel (défaut=100_000)
+        Le nombre de chemins de simulations pour chaque modèle.
+
+    Renvoie :
+    ---------
+    option_info : pd.DataFrame
+        DataFrame avec une nouvelle colonne 'R_j' contenant les rendements simulés.
+    """
+    # Obtenir les dates et les DTM uniques dans le DataFrame option_info
+    date_unique = np.unique(option_info.date)
+    DTM_unique = np.unique(option_info.DTM)
+
+    # Nombre de jours de négociation dans les années 1996 et 2020
+    n_days96 = max(option_info[option_info.date == date_unique[0]].DTM)
+    n_days20 = max(option_info[option_info.date == date_unique[1]].DTM)
+
+    # Simuler les rendements pour les années 1996 et 2020
+    ex_r_96 = measure(
+        *ng1996.simulateQ(1, n_days96, n_paths, ng1996.Q_predict_h())
+    ).ex_r
+    ex_r_20 = measure(
+        *ng2020.simulateQ(1, n_days20, n_paths, ng2020.Q_predict_h())
+    ).ex_r
+
+    # Ajouter une nouvelle colonne 'R_j' au DataFrame option_info
+    option_info["R_j"] = pd.NA
+    warnings.simplefilter("ignore")
+
+    # Itérer sur les DTM et les dates uniques
+    for dtm in DTM_unique:
+        option_DTM_i = option_info[option_info.DTM == dtm]
+        for date in date_unique:
+            option_DTM_ti = option_DTM_i[option_DTM_i.date == date]
+            if not option_DTM_ti.empty:
+                if pd.DatetimeIndex([date]).year == 1996:
+                    ex_r = ex_r_96
+                else:
+                    ex_r = ex_r_20
+
+                # Simuler les rendements pour le DTM actuel
+                R_j = np.exp(np.apply_along_axis(sum, 0, ex_r[:dtm]))
+                # Ajouter les rendements simulés au DataFrame option_info
+                for i in option_DTM_ti.index:
+                    option_info.R_j[i] = R_j
+
+    warnings.resetwarnings()
+
+    return option_info
+
+
+def calculate_option_prices(
+    option_info: pd.DataFrame, ng1996: ngarch, ng2020: ngarch
+) -> pd.DataFrame:
+    """Calculate the option prices based on the ngarch models.
+
+    Args:
+        option_info: DataFrame containing the option information.
+        ng1996: ngarch model fitted to data from 1996-12-03.
+        ng2020: ngarch model fitted to data from 2020-02-03.
+
+    Returns:
+        DataFrame with the option prices.
+
+    """
+    # Get unique dates from the option_info DataFrame
+    date_unique = np.unique(option_info.date)
+
+    # Initialize the Option_price column with pd.NA values
+    option_info["Option_price"] = pd.NA
+
+    # Split the option_info DataFrame based on the unique dates
+    option_info_96 = option_info[option_info.date == date_unique[0]]
+    option_info_20 = option_info[option_info.date == date_unique[1]]
+
+    # Calculate the option prices using the ngarch models and the option_info DataFrames split by dates
+    option_price_96 = [
+        ng1996.option_price(
+            info.R_j,
+            info.F_CBOE,
+            info.strike_price / 1000,
+            info.r_f,
+            info.DTM,
+            info.cp_flag == "C",
+        )
+        for _, info in option_info_96.iterrows()
+    ]
+    option_info.loc[option_info_96.index, "Option_price"] = option_price_96
+
+    option_price_20 = [
+        ng2020.option_price(
+            info.R_j,
+            info.F_CBOE,
+            info.strike_price / 1000,
+            info.r_f,
+            info.DTM,
+            info.cp_flag == "C",
+        )
+        for _, info in option_info_20.iterrows()
+    ]
+    option_info.loc[option_info_20.index, "Option_price"] = option_price_20
+
+    # Return the option_info DataFrame with the calculated option prices
+    return option_info
+
+def f_impl_vol_Q5(option_info, days_in_year) :
+    """
+    Calcul les volatiltiés implicites en Question 5 (NGARCH)
+    
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+    days_in_year: float
+        Nombre de jours considéré dans l'année
+
+    Renvoie :
+    ---------
+    impl_vol_mkt : np.ndarray
+        Tableau de IV associé aux option dans option_info
+        pour les prix provenant du NGARCH
+    """
+    warnings.simplefilter('ignore')
+    impl_vol_ng = bms.implied_volatility(opt_price = option_info.Option_price, 
+                                        S         = option_info.exdiv_2, 
+                                        K         = option_info.strike_price / 1000, 
+                                        r         = option_info.r_f, 
+                                        y         = 0, 
+                                        T         = option_info.DTM / days_in_year, 
+                                        is_call   = (option_info.cp_flag == 'C'))
+    warnings.resetwarnings()
+    
+    return impl_vol_ng
+
+def f_erreur_tarification(option_info):
+    """
+    Crée le tableau d'aggrégation demandé pour la question 5
+    
+    Paramètres :
+    -----------
+    option_info : pd.DataFrame
+        DataFrame contenant les données des options.
+
+    Renvoie :
+    ---------
+    summary : list
+        Liste de tableau d'aggrégation d'erreur de IV entre
+        le modèle NGARCH et les modèles des Q3 et Q4. (un tableau
+        par date d'évaluation dans le dataset)
+    """   
+    option_info['Moneyness'] = option_info.strike_price / (1000 * option_info.S_t)
+    date_unique = np.unique(option_info.date)
+    summary = []
+    for date in date_unique:
+
+        option_info_d = option_info[option_info.date == date]
+
+        # Calculer les erreurs de tarification pour chaque option
+        df_errors = pd.DataFrame()
+        df_errors['Maturity'] = option_info_d['DTM']
+        df_errors['Moneyness'] = option_info_d['Moneyness']
+        df_errors['Erreurs moy. vs Methode 1'] = option_info_d['IV_method1'] - option_info_d['IV_NGARCH']
+        df_errors['Erreurs moy. vs Methode 2'] = option_info_d['IV_method2'] - option_info_d['IV_NGARCH']
+
+        # Diviser les données en intervalles de maturité et de moneyness
+        maturity_bins = np.linspace(option_info_d['DTM'].min(), option_info_d['DTM'].max(), num=5)
+        moneyness_bins = np.linspace(option_info_d['Moneyness'].min(), option_info_d['Moneyness'].max(), num=5)
+        df_errors['Maturity Bin'] = pd.cut(df_errors['Maturity'], bins=maturity_bins)
+        df_errors['Moneyness Bin'] = pd.cut(df_errors['Moneyness'], bins=moneyness_bins)
+
+        # Calculer la moyenne et l'écart-type des erreurs pour chaque intervalle
+        grouped = df_errors.groupby(['Maturity Bin', 'Moneyness Bin'])
+        summ    = grouped[['Erreurs moy. vs Methode 1', 'Erreurs moy. vs Methode 2']].agg([np.mean])
+        summ.reset_index(inplace=True)
+        summ.columns = summ.columns.droplevel(level=1)
+        
+        summary.append(summ.dropna())
+        
+    return summary
